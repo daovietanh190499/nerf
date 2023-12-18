@@ -34,8 +34,6 @@ def test(hn, hf, dataset, chunk_size=10, img_index=0, nb_bins=192, H=400, W=400)
         data.append(regenerated_px_values)
     img = torch.cat(data).data.cpu().numpy().reshape(H, W, 3)
 
-    print("ok")
-
     plt.figure()
     plt.imshow(img)
     plt.savefig(f'novel_views/img_{img_index}.png', bbox_inches='tight')
@@ -105,13 +103,6 @@ def render_rays(nerf_model, ray_origins, ray_directions, hn=0, hf=0.5, nb_bins=1
     # Expand the ray_directions tensor to match the shape of x
     ray_directions = ray_directions.expand(nb_bins, ray_directions.shape[0], 3).transpose(0, 1) 
 
-    import os
-    if not os.path.exists("test.txt"):
-        np.savetxt('test.txt', x.reshape(-1,3).detach().cpu().numpy())
-    elif not os.path.exists("test1.txt"):
-        np.savetxt('test1.txt', x.reshape(-1,3).detach().cpu().numpy())
-        exit()
-
     colors, sigma = nerf_model(x.reshape(-1, 3), ray_directions.reshape(-1, 3))
     colors = colors.reshape(x.shape)
     sigma = sigma.reshape(x.shape[:-1])
@@ -128,16 +119,13 @@ def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=
           nb_bins=192, H=400, W=400):
     training_loss = []
     for _ in tqdm(range(nb_epochs)):
-        for batch in tqdm(data_loader):
+        for batch in data_loader:
             ray_origins = batch[:, :3].to(device)
             ray_directions = batch[:, 3:6].to(device)
             ground_truth_px_values = batch[:, 6:].to(device)
             
             regenerated_px_values = render_rays(nerf_model, ray_origins, ray_directions, hn=hn, hf=hf, nb_bins=nb_bins) 
             loss = ((ground_truth_px_values - regenerated_px_values) ** 2).sum()
-            # print(loss)
-            # print(ground_truth_px_values)
-            # print("===>", regenerated_px_values)
 
             optimizer.zero_grad()
             loss.backward()
@@ -145,8 +133,7 @@ def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=
             training_loss.append(loss.item())
         scheduler.step()
 
-        for img_index in [0, 60, 120, 180]:
-            print("run")
+        for img_index in range(200):
             test(hn, hf, testing_dataset, img_index=img_index, nb_bins=nb_bins, H=H, W=W)
     return training_loss
 
@@ -154,12 +141,11 @@ def train(nerf_model, optimizer, scheduler, data_loader, device='cpu', hn=0, hf=
 if __name__ == '__main__':
     device = 'cuda'
     
-    training_dataset = torch.from_numpy(np.load('nerf_datasets/training_data.pkl', allow_pickle=True))
-    print(training_dataset[:20])
-    testing_dataset = torch.from_numpy(np.load('nerf_datasets/testing_data.pkl', allow_pickle=True))
+    training_dataset = torch.from_numpy(np.load('training_data.pkl', allow_pickle=True))
+    testing_dataset = torch.from_numpy(np.load('testing_data.pkl', allow_pickle=True))
     model = NerfModel(hidden_dim=256).to(device)
     model_optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(model_optimizer, milestones=[2, 4, 8], gamma=0.5)
     data_loader = DataLoader(training_dataset, batch_size=1024, shuffle=True)
-    train(model, model_optimizer, scheduler, data_loader, nb_epochs=1, device=device, hn=2, hf=6, nb_bins=192, H=400,
+    train(model, model_optimizer, scheduler, data_loader, nb_epochs=16, device=device, hn=2, hf=6, nb_bins=192, H=400,
           W=400)
